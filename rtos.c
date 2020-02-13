@@ -107,6 +107,7 @@ void rtos_start_scheduler(void)
 
 rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,rtos_autostart_e autostart)
 {
+	//register uint32_t PCR_task asm("xpsr");
 	if(task_list.nTasks<=RTOS_MAX_NUMBER_OF_TASKS){
 		if(autostart == kAutoStart)
 			task_list.tasks[task_list.nTasks].state = S_READY;
@@ -115,6 +116,8 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,rtos_a
 		task_list.tasks[task_list.nTasks].local_tick = 0;
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].task_body = task_body;
+		task_list.tasks[task_list.nTasks].sp = &task_list.tasks[task_list.nTasks].stack[0]+(RTOS_STACK_SIZE-1);
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE-1] = (uint32_t)task_body;
 		task_list.nTasks++;
 		return task_list.nTasks-1;
 	}else
@@ -228,12 +231,13 @@ static void dispatcher(task_switch_type_e type)
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
 	static uint8_t first_time_flag = 0;
-	register uint32_t SP_Task asm("r7");
+	register uint32_t SP_Task asm("r0");
 	if(first_time_flag == 0)
 		first_time_flag = 1;
 	else
 	{
-		task_list.tasks[task_list.current_task].sp = (uint32_t *)SP_Task ;
+		__asm ("mov r0, SP");
+		task_list.tasks[task_list.current_task].sp = (uint32_t *)SP_Task;
 	}
 	task_list.current_task = task_list.next_task;
 	task_list.tasks[task_list.next_task].state = S_RUNNING;
@@ -253,7 +257,7 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 static void activate_waiting_tasks()
 {
 	uint8_t tasks;
-	for(tasks = 0; task < task_list.nTasks; tasks++)
+	for(tasks = 0; tasks < task_list.nTasks; tasks++)
 	{
 		if(task_list.tasks[tasks].state == S_WAITING)
 		{
@@ -304,6 +308,10 @@ void SysTick_Handler(void)
 
 void PendSV_Handler(void)
 {
+	register uint32_t SP_Task asm("r0");
+	SP_Task = (uint32_t)task_list.tasks[task_list.current_task].sp;
+	asm ("mov SP, r0");
+
 /*!
  *  LOAD CPU SP WITH CURRENT TASK SP
  */
