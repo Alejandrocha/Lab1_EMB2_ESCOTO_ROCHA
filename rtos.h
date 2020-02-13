@@ -19,6 +19,10 @@ typedef enum
 {
 	kAutoStart, kStartSuspended
 } rtos_autostart_e;
+typedef enum
+{
+	kPrio0,kPrio1,kPrio2,kPrio3
+} rtos_priority_e;
 
 /*! @brief Task handle type, used to identify a task */
 typedef int8_t rtos_task_handle_t;

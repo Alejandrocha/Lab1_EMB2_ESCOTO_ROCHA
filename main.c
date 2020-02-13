@@ -65,9 +65,9 @@ int main(void) {
 
     PRINTF("Hello World\n");
 
-	rtos_create_task(dummy_task1, 1, kAutoStart);
-	rtos_create_task(dummy_task2, 2, kAutoStart);
-	rtos_create_task(dummy_task3, 1, kAutoStart);
+	rtos_create_task(dummy_task1, kPrio1, kAutoStart);
+	rtos_create_task(dummy_task2, kPrio2, kAutoStart);
+	rtos_create_task(dummy_task3, kPrio1, kAutoStart);
 	rtos_start_scheduler();
 
 	for (;;)

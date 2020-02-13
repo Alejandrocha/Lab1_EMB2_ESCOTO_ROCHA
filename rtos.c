@@ -100,13 +100,25 @@ void rtos_start_scheduler(void)
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk
 	        | SysTick_CTRL_ENABLE_Msk;
 	reload_systick();
-	for (;;)
-		;
+	task_list.global_tick = 0;
+	rtos_create_task(idle_task, 0, kAutoStart);
+	for (;;);
 }
 
-rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
-		rtos_autostart_e autostart)
+rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,rtos_autostart_e autostart)
 {
+	if(task_list.nTasks<=RTOS_MAX_NUMBER_OF_TASKS){
+		if(autostart == kAutoStart)
+			task_list.tasks[task_list.nTasks].state = S_READY;
+		else
+			task_list.tasks[task_list.nTasks].state = S_SUSPENDED;
+		task_list.tasks[task_list.nTasks].local_tick = 0;
+		task_list.tasks[task_list.nTasks].priority = priority;
+		task_list.tasks[task_list.nTasks].task_body = task_body;
+		task_list.nTasks++;
+		return task_list.nTasks-1;
+	}else
+		return -1;
 /*!
  * IF TASK_SPACE NOT EMPTY
  * 	IF AUTOSTART
@@ -124,11 +136,14 @@ rtos_tick_t rtos_get_clock(void)
 	/*!
 	 * GET SYS_CLK VALUE
 	 */
-	return 0;
+	return SysTick->VAL;
 }
 
 void rtos_delay(rtos_tick_t ticks)
 {
+	task_list.tasks[task_list.current_task].state= S_WAITING;
+	task_list.tasks[task_list.current_task].local_tick = ticks;
+	dispatcher(kFromNormalExec);
 	/*!
 	 * SET CALLING TASK TO SLEEP ticks TICKS
 	 * ASSIGN LOCAL TICKS
@@ -139,6 +154,9 @@ void rtos_delay(rtos_tick_t ticks)
 
 void rtos_suspend_task(void)
 {
+
+	task_list.tasks[task_list.current_task].state= S_SUSPENDED;
+	dispatcher(kFromNormalExec);
 /*!
  * SUSPEND CALLING TASK
  * CALL DISPATCHER
@@ -147,10 +165,13 @@ void rtos_suspend_task(void)
 
 void rtos_activate_task(rtos_task_handle_t task)
 {
-/*!
- * SET CALLING TASK TO ACTIVE
- * CALL DISPATCHER
- */
+	/*!
+	 * SET CALLING TASK TO ACTIVE
+	 * CALL DISPATCHER
+	 */
+	task_list.tasks[task].state= S_READY;
+	dispatcher(kFromNormalExec);
+
 }
 
 /**********************************************************************************/
@@ -166,6 +187,28 @@ static void reload_systick(void)
 
 static void dispatcher(task_switch_type_e type)
 {
+	uint8_t highest_priority = kPrio0;
+	uint8_t ltask;
+	for(ltask = 0; ltask<task_list.nTasks; ltask++)
+	{
+		if(task_list.tasks[ltask].task_body == idle_task)
+		{
+			task_list.next_task = ltask;
+		}
+	}
+	for(ltask = 0;ltask<task_list.nTasks;ltask++)
+	{
+		if((task_list.tasks[ltask].priority >= highest_priority)
+				&& ((task_list.tasks[ltask].state == S_READY)
+						||(task_list.tasks[ltask].state == S_RUNNING)))
+		{
+			highest_priority = task_list.tasks[ltask].priority;
+			task_list.next_task = ltask;
+		}
+	}
+	if(task_list.current_task != task_list.next_task)
+		context_switch(kFromNormalExec);
+
 /*!
  * SET NEXT TASK TO IDLE
  * SET HIGH PRI
@@ -184,6 +227,18 @@ static void dispatcher(task_switch_type_e type)
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
+	static uint8_t first_time_flag = 0;
+	register uint32_t SP_Task asm("r7");
+	if(first_time_flag == 0)
+		first_time_flag = 1;
+	else
+	{
+		task_list.tasks[task_list.current_task].sp = (uint32_t *)SP_Task ;
+	}
+	task_list.current_task = task_list.next_task;
+	task_list.tasks[task_list.next_task].state = S_RUNNING;
+	PendSV_Handler();
+
 /*!
  * IF NOT FIRST TASK
  *		SAVE CURRENT SP IN CURRENT TASK STACK
@@ -197,6 +252,16 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 
 static void activate_waiting_tasks()
 {
+	uint8_t tasks;
+	for(tasks = 0; task < task_list.nTasks; tasks++)
+	{
+		if(task_list.tasks[tasks].state == S_WAITING)
+		{
+			task_list.tasks[tasks].local_tick--;
+			if(task_list.tasks[tasks].local_tick == 0)
+				task_list.tasks[tasks].state = S_READY;
+		}
+	}
 /*!
  * FOR ALL TASKS
  * 	IF WAITING TASK
@@ -231,8 +296,10 @@ void SysTick_Handler(void)
 #ifdef RTOS_ENABLE_IS_ALIVE
 	refresh_is_alive();
 #endif
+	task_list.global_tick++;
 	activate_waiting_tasks();
 	reload_systick();
+	dispatcher(kFromISR);
 }
 
 void PendSV_Handler(void)
