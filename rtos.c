@@ -26,7 +26,7 @@
 #define STACK_LR_OFFSET				2
 #define STACK_PSR_OFFSET			1
 #define STACK_PSR_DEFAULT			0x01000000
-
+#define STACK_LOAD_OFFSET			4
 /**********************************************************************************/
 // IS ALIVE definitions
 /**********************************************************************************/
@@ -113,12 +113,12 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,rtos_a
 			task_list.tasks[task_list.nTasks].state = S_READY;
 		else
 			task_list.tasks[task_list.nTasks].state = S_SUSPENDED;
-		task_list.tasks[task_list.nTasks].local_tick = 0;
-		task_list.tasks[task_list.nTasks].priority = priority;
-		task_list.tasks[task_list.nTasks].task_body = task_body;
-		task_list.tasks[task_list.nTasks].sp = &task_list.tasks[task_list.nTasks].stack[0]+(RTOS_STACK_SIZE-1);
-		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE-1] = (uint32_t)task_body;
-		task_list.nTasks++;
+			task_list.tasks[task_list.nTasks].local_tick = 0;
+			task_list.tasks[task_list.nTasks].priority = priority;
+			task_list.tasks[task_list.nTasks].task_body = task_body;
+			task_list.tasks[task_list.nTasks].sp = &task_list.tasks[task_list.nTasks].stack[0]+(RTOS_STACK_SIZE-1);
+			task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE-1] = (uint32_t)task_body;
+			task_list.nTasks++;
 		return task_list.nTasks-1;
 	}else
 		return -1;
@@ -192,7 +192,7 @@ static void dispatcher(task_switch_type_e type)
 {
 	uint8_t highest_priority = kPrio0;
 	uint8_t ltask;
-	for(ltask = 0; ltask<task_list.nTasks; ltask++)
+	for(ltask = 0; ltask<task_list.nTasks; ltask++) // set idle_task as next task
 	{
 		if(task_list.tasks[ltask].task_body == idle_task)
 		{
@@ -236,12 +236,15 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 		first_time_flag = 1;
 	else
 	{
-		__asm ("mov r0, SP");
+		__asm ("mov r0, r7");
 		task_list.tasks[task_list.current_task].sp = (uint32_t *)SP_Task;
+		task_list.tasks[task_list.current_task].sp -= -1;
 	}
+
 	task_list.current_task = task_list.next_task;
 	task_list.tasks[task_list.next_task].state = S_RUNNING;
-	PendSV_Handler();
+
+	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 
 /*!
  * IF NOT FIRST TASK
@@ -309,8 +312,11 @@ void SysTick_Handler(void)
 void PendSV_Handler(void)
 {
 	register uint32_t SP_Task asm("r0");
-	SP_Task = (uint32_t)task_list.tasks[task_list.current_task].sp;
-	asm ("mov SP, r0");
+	SCB->ICSR |= SCB_ICSR_PENDSTCLR_Msk;
+
+	SP_Task = (uint32_t)task_list.tasks[task_list.current_task].sp - STACK_LOAD_OFFSET;
+
+	__asm ("mov r7, r0");
 
 /*!
  *  LOAD CPU SP WITH CURRENT TASK SP
