@@ -153,7 +153,7 @@ void rtos_delay(rtos_tick_t ticks)
 
 	task_list.tasks[task_list.current_task].state= S_WAITING;
 	task_list.tasks[task_list.current_task].local_tick = ticks;
-//	dispatcher(kFromNormalExec);
+	dispatcher(kFromNormalExec);
 	/*!
 	 * SET CALLING TASK TO SLEEP ticks TICKS
 	 * ASSIGN LOCAL TICKS
@@ -245,11 +245,14 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 	{
 
 		__asm ("mov r0, r7");
-//		if(type != kFromNormalExec)
-//			task_list.tasks[task_list.current_task].sp = (uint32_t *)(SP_Task+1);
-//		else
+		if(type == kFromNormalExec){
+			task_list.tasks[task_list.current_task].sp = (uint32_t *)(SP_Task);
+			task_list.tasks[task_list.current_task].sp += -9;
+		}
+		else{
 			task_list.tasks[task_list.current_task].sp = (uint32_t *)(SP_Task );
 			task_list.tasks[task_list.current_task].sp -= -11;
+			}
 //		task_list.tasks[task_list.current_task].sp -= STACK_FRAME_SIZE;
 	}
 	task_list.current_task = task_list.next_task;

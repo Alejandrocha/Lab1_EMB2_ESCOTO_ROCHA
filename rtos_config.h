@@ -27,7 +27,7 @@
 /*! @brief Is alive signal port */
 #define RTOS_IS_ALIVE_PORT			E
 /*! @brief Is alive signal pin */
-#define RTOS_IS_ALIVE_PIN			6
+#define RTOS_IS_ALIVE_PIN			26
 /*! @brief Is alive signal period */
 #define RTOS_IS_ALIVE_PERIOD_IN_US  (1000000)
 #endif
